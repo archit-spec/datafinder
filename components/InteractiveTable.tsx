@@ -30,6 +30,7 @@ import { Badge } from '@/components/ui/badge';
 import { Search, SortAsc, SortDesc, Filter, Database, Loader2 } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast"
 import { duckDBService } from './duckDBService';
+import { cn } from "@/lib/utils";
 
 interface DataRow {
   id: number;
@@ -52,6 +53,8 @@ const InteractiveTable = () => {
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: null, direction: 'asc' });
   const [filter, setFilter] = useState('');
   const [datasetUrl, setDatasetUrl] = useState('');
+  const [naturalLanguageQuery, setNaturalLanguageQuery] = useState('');
+  const [generatedSQL, setGeneratedSQL] = useState<string>('');
   const { toast } = useToast();
 
   useEffect(() => {
@@ -161,6 +164,42 @@ const InteractiveTable = () => {
     }
   };
 
+  const handleNaturalLanguageQuery = async () => {
+    if (!naturalLanguageQuery.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter a query",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Convert natural language to SQL
+      const sqlQuery = await duckDBService.getNLtoSQL(naturalLanguageQuery);
+      setGeneratedSQL(sqlQuery);
+      
+      // Execute the generated SQL
+      const result = await duckDBService.executeQuery(sqlQuery);
+      setData(result);
+      
+      toast({
+        title: "Success",
+        description: "Query executed successfully",
+      });
+    } catch (error) {
+      console.error('Query failed:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to execute query",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <Card className="w-full max-w-4xl">
       <CardHeader>
@@ -231,21 +270,24 @@ const InteractiveTable = () => {
         <div className="border rounded-lg">
           <Table>
             <TableHeader>
-              <TableRow className="bg-gray-50">
+              <TableRow className="bg-gray-100 border-b">
                 {data.length > 0 && Object.keys(data[0]).map((header) => (
-                  <TableHead key={header} className="font-semibold">
+                  <TableHead 
+                    key={header} 
+                    className="px-4 py-3 text-left text-sm font-semibold text-gray-900 uppercase tracking-wider"
+                  >
                     <div className="flex items-center gap-2">
                       {header}
                       <DropdownMenu>
                         <DropdownMenuTrigger className="focus:outline-none">
                           {sortConfig.key === header ? (
                             sortConfig.direction === 'asc' ? (
-                              <SortAsc className="h-4 w-4 text-gray-500" />
+                              <SortAsc className="h-4 w-4 text-gray-500 hover:text-gray-700" />
                             ) : (
-                              <SortDesc className="h-4 w-4 text-gray-500" />
+                              <SortDesc className="h-4 w-4 text-gray-500 hover:text-gray-700" />
                             )
                           ) : (
-                            <Filter className="h-4 w-4 text-gray-500" />
+                            <Filter className="h-4 w-4 text-gray-500 hover:text-gray-700" />
                           )}
                         </DropdownMenuTrigger>
                         <DropdownMenuContent>
@@ -263,45 +305,64 @@ const InteractiveTable = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data
-                .filter(item => 
-                  filter === '' || 
-                  Object.values(item).some(val => 
-                    val.toString().toLowerCase().includes(filter.toLowerCase())
-                  )
-                )
-                .map((row, index) => (
-                  <TableRow 
-                    key={index}
-                    className="hover:bg-gray-50 transition-colors"
-                  >
-                    {Object.entries(row).map(([key, value], cellIndex) => (
-                      <TableCell key={cellIndex}>
-                        {key === 'status' ? (
-                          <Badge className={`${statusColors[value as string]} font-medium`}>
-                            {value}
-                          </Badge>
-                        ) : key === 'performance' ? (
-                          <div className="flex items-center gap-2">
-                            <div className="w-full bg-gray-200 rounded-full h-2">
-                              <div
-                                className="bg-blue-600 h-2 rounded-full"
-                                style={{ width: `${value}%` }}
-                              />
-                            </div>
-                            <span className="text-sm font-medium">{value}%</span>
-                          </div>
-                        ) : (
-                          typeof value === 'number' ? 
-                            value.toLocaleString() : 
-                            value
-                        )}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
+              {data.map((row, index) => (
+                <TableRow 
+                  key={index}
+                  className={cn(
+                    "hover:bg-gray-50 transition-colors",
+                    index % 2 === 0 ? "bg-white" : "bg-gray-50"
+                  )}
+                >
+                  {Object.entries(row).map(([key, value], cellIndex) => (
+                    <TableCell 
+                      key={cellIndex}
+                      className="px-4 py-3 text-sm text-gray-900 border-b"
+                    >
+                      {value}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
+        </div>
+
+        {/* AI Query Input Section */}
+        <div className="space-y-4 mb-6">
+          <div className="flex gap-4">
+            <Input
+              placeholder="Ask a question about your data..."
+              value={naturalLanguageQuery}
+              onChange={(e) => setNaturalLanguageQuery(e.target.value)}
+              disabled={loading}
+              className="flex-1"
+            />
+            <Button 
+              onClick={handleNaturalLanguageQuery}
+              disabled={loading || !naturalLanguageQuery.trim()}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {loading ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : (
+                <Search className="w-4 h-4 mr-2" />
+              )}
+              Ask AI
+            </Button>
+          </div>
+          
+          {generatedSQL && (
+            <div className="bg-gray-50 rounded-md p-4">
+              <p className="text-sm font-medium text-gray-700 mb-2">Generated SQL:</p>
+              <pre className="bg-gray-100 p-3 rounded text-sm overflow-x-auto">
+                {generatedSQL}
+              </pre>
+            </div>
+          )}
+          
+          <p className="text-sm text-gray-500">
+            Example: "Show me the top 5 rows sorted by the first column"
+          </p>
         </div>
       </CardContent>
     </Card>

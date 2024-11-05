@@ -1,0 +1,31 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_DUCKDB_BUNDLE_URL=https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm/dist
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  dev:
+    build:
+      context: .
+      target: builder
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_DUCKDB_BUNDLE_URL=https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm/dist
+    command: ["bun", "dev"]
+

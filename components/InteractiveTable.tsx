@@ -131,7 +131,7 @@ const InteractiveTable = () => {
   const handleLoadDataset = async () => {
     if (!datasetUrl.trim()) {
       toast({
-        title: "Error",
+        title: "Invalid URL",
         description: "Please enter a dataset URL",
         variant: "destructive",
       });
@@ -140,8 +140,11 @@ const InteractiveTable = () => {
 
     setLoading(true);
     try {
-      const result = await duckDBService.queryDataset(datasetUrl);
+      console.log('Loading dataset:', datasetUrl);
+      
+      const result = await duckDBService.createTableFromDataset(datasetUrl);
       setData(result);
+      
       toast({
         title: "Success",
         description: "Dataset loaded successfully",

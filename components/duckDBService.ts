@@ -5,6 +5,7 @@ import { Groq } from "groq-sdk";
 export const duckDBService = {
   db: null as duckdb.AsyncDuckDB | null,
   conn: null as any,
+  defaultDatasetUrl: 'https://huggingface.co/datasets/archit11/distilabel-example/resolve/main/data/train-00000-of-00001.parquet?download=true',
 
   async initialize() {
     try {
@@ -71,7 +72,7 @@ export const duckDBService = {
     }
   },
 
-  async createTableFromDataset(datasetUrl: string) {
+  async createTableFromDataset(datasetUrl: string = this.defaultDatasetUrl) {
     try {
       // Create table from dataset using hf:// path
       const createTableQuery = `
@@ -132,6 +133,13 @@ export const duckDBService = {
       throw error;
     }
   },
+  serializeData(data: any) {
+    return JSON.stringify(data, (_, value) =>
+      typeof value === 'bigint'
+        ? value.toString()
+        : value
+    );
+  },
 
   async getNLtoSQL(naturalLanguageQuery: string) {
     try {
@@ -140,51 +148,71 @@ export const duckDBService = {
       const sampleData = await this.getSampleData();
 
       const groq = new Groq({ 
-        apiKey: process.env.NEXT_PUBLIC_GROQ_API_KEY ,
+        apiKey: process.env.NEXT_PUBLIC_GROQ_API_KEY,
         dangerouslyAllowBrowser: true
       });
 
       const prompt = `
-        genearte raw sql query with no markdown formatting like json
-        and no extra text output should always only be sql query
         You are a SQL query generator for DuckDB. 
         
         Database Context:
         Table Name: dataset_table
         
         Schema:
-        ${JSON.stringify(schema, null, 1)}
+        ${this.serializeData(schema)}
         
         Sample Data:
-        ${JSON.stringify(sampleData, null, 1)}
+        ${this.serializeData(sampleData)}
         
-        Convert this natural language query to SQL:
+        Natural Language Query:
         "${naturalLanguageQuery}"
         
         Rules:
-        1. Use only standard SQL syntax
+        1. Use only standard SQL syntax compatible with DuckDB
         2. Query from the table named 'dataset_table'
-        3. Return only the SQL query, no explanations
-        4. Ensure the query is valid DuckDB syntax
-        5. Use the actual column names from the schema
-        6. Consider the data types when writing conditions
+        3. Return only the SQL query without any explanations
+        4. Use the actual column names from the schema
+        5. Consider the data types when writing conditions
+        6. Handle numeric values appropriately
+        7. If the query involves aggregations, use appropriate GROUP BY clauses
+        8. For text searches, use LIKE or ILIKE for case-insensitive matches
+        
+        Example Queries:
+        - "Show all columns where value > 100"
+          SELECT * FROM dataset_table WHERE value > 100;
+        
+        - "Find average by category"
+          SELECT category, AVG(value) FROM dataset_table GROUP BY category;
+        
+        - "Search for text containing 'example'"
+          SELECT * FROM dataset_table WHERE column_name ILIKE '%example%';
+        
+        Generate SQL for the natural language query above:
       `;
 
       const completion = await groq.chat.completions.create({
         messages: [
           {
+            role: "system",
+            content: "You are a SQL expert specializing in DuckDB queries. Generate only SQL queries without any explanations or additional text."
+          },
+          {
             role: "user",
             content: prompt,
           },
         ],
-        model: "llama-3.1-70b-versatile",
-        "max_tokens": 8000,
-
+        model: "llama3-8b-8192",
+        temperature: 0.3, // Lower temperature for more focused SQL generation
       });
 
-      const sqlQuery = completion.choices[0]?.message?.content;
+      const sqlQuery = completion.choices[0]?.message?.content?.trim();
       if (!sqlQuery) {
         throw new Error('Failed to generate SQL query');
+      }
+
+      // Validate that the response is a SQL query
+      if (!sqlQuery.toUpperCase().includes('SELECT')) {
+        throw new Error('Invalid SQL query generated');
       }
 
       console.log('Generated SQL:', sqlQuery);
@@ -195,3 +223,35 @@ export const duckDBService = {
     }
   }
 };
+
+// import { usePathname } from "next/navigation"
+// // Add isActive prop to items
+// const pathname = usePathname()
+// // Add isActive prop to items
+
+// item = {
+//   title: string,
+//   href: string,
+//   isActive: boolean
+// }
+// // make an item object
+// const item: Item = {
+//   title: string,
+//   href: string,
+//   isActive: boolean
+// }
+// const isActive = pathname === item.href
+
+// import Link from "next/link"
+// // Add href to items interface and wrap Cards in Link
+// <Link href={item.href}>
+//   <Card className={cn("hover:bg-accent transition-colors", 
+//     isActive && "bg-accent")} />
+// </Link>
+
+// import {
+//   Collapsible,
+//   CollapsibleContent,
+//   CollapsibleTrigger,
+// } from "@/components/ui/collapsible"import { Item } from '@radix-ui/react-dropdown-menu';
+
